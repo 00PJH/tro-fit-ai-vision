@@ -1,0 +1,68 @@
+{
+  "session_id": "20260628_215909",
+  "joint": "shoulder",
+  "movement": "abduction",
+  "side": "both",
+  "video_file": "shoulder_abduction_both.mp4",
+  "video_info": {
+    "fps": 24.0,
+    "total_frames": 87,
+    "width": 2160,
+    "height": 3840,
+    "duration_s": 3.625
+  },
+  "measurement": {
+    "neutral_captured_at": "0.500s (frame #12)",
+    "max_candidates": [
+      "2.625s (frame #63)",
+      "3.125s (frame #75)"
+    ],
+    "max_selected": "2.625s (frame #63)",
+    "selection_reason": "more_extreme_pose",
+    "use_world_landmarks": true,
+    "visibility_threshold": 0.65
+  },
+  "rom_results": {
+    "left_shoulder": {
+      "neutral_angle": 12.24,
+      "max_angle": 162.18,
+      "ama_neutral_angle": 12.24,
+      "ama_max_angle": 162.18,
+      "rom": 162.18,
+      "reliable": true
+    },
+    "right_shoulder": {
+      "neutral_angle": 16.84,
+      "max_angle": 72.28,
+      "ama_neutral_angle": 16.84,
+      "ama_max_angle": 72.28,
+      "rom": 72.28,
+      "reliable": true
+    }
+  },
+  "mobility_analysis": [
+    {
+      "side": "left",
+      "measured_angle_deg": 162.18,
+      "mobility_score": {
+        "normal_deg": 150,
+        "rom_ratio": 108.1,
+        "grade": "NORMAL",
+        "clinical_meaning": "어깨 위 동작 포함 일상 동작 대부분 가능"
+      }
+    },
+    {
+      "side": "right",
+      "measured_angle_deg": 72.28,
+      "mobility_score": {
+        "normal_deg": 150,
+        "rom_ratio": 48.2,
+        "grade": "CRITICAL",
+        "clinical_meaning": "기본 위생 동작 불가. 즉각 재활 권고"
+      }
+    }
+  ],
+  "confidence": "HIGH",
+  "elapsed_sec": 1.816,
+  "model": "pose_landmarker_full.task"
+}

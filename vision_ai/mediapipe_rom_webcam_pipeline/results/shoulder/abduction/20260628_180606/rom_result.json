@@ -1,0 +1,66 @@
+{
+  "session_id": "20260628_180608",
+  "joint": "shoulder",
+  "movement": "abduction",
+  "video_file": "shoulder_abduction.mp4",
+  "video_info": {
+    "fps": 24.0,
+    "total_frames": 96,
+    "width": 720,
+    "height": 1280,
+    "duration_s": 4.0
+  },
+  "measurement": {
+    "neutral_captured_at": "0.500s (frame #12)",
+    "max_candidates": [
+      "3.000s (frame #72)",
+      "3.500s (frame #84)"
+    ],
+    "max_selected": "3.500s (frame #84)",
+    "selection_reason": "more_extreme_pose",
+    "use_world_landmarks": true,
+    "visibility_threshold": 0.65
+  },
+  "rom_results": {
+    "left_shoulder": {
+      "neutral_angle": 14.19,
+      "max_angle": 127.79,
+      "rom": 113.6,
+      "reliable": true
+    },
+    "right_shoulder": {
+      "neutral_angle": 21.26,
+      "max_angle": 34.25,
+      "rom": 12.99,
+      "reliable": true
+    }
+  },
+  "mobility_analysis": [
+    {
+      "side": "left",
+      "measured_angle_deg": 113.6,
+      "mobility_score": {
+        "normal_deg": 150,
+        "rom_ratio": 75.7,
+        "grade": "WARNING",
+        "clinical_meaning": "기본 위생 동작이 어렵습니다."
+      }
+    },
+    {
+      "side": "right",
+      "measured_angle_deg": 12.99,
+      "mobility_score": {
+        "normal_deg": 150,
+        "rom_ratio": 8.7,
+        "grade": "CRITICAL",
+        "clinical_meaning": "기본 위생 동작이 어렵습니다."
+      }
+    }
+  ],
+  "overall_grade": "CRITICAL",
+  "asymmetry_alert": true,
+  "asymmetry_diff_deg": 100.6,
+  "confidence": "HIGH",
+  "elapsed_sec": 1.591,
+  "model": "pose_landmarker_full.task"
+}

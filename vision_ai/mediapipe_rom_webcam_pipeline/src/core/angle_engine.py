@@ -106,6 +106,7 @@ def calculate_angle_3d(
     point_a: LandmarkPoint,
     vertex:  LandmarkPoint,
     point_c: LandmarkPoint,
+    ignore_z: bool = False,
 ) -> float:
     """
     3D 벡터 내적으로 vertex를 꼭짓점으로 하는 A-Vertex-C 사이각(도)을 반환합니다.
@@ -123,9 +124,13 @@ def calculate_angle_3d(
     Returns:
         float: 각도 (0 ~ 180도), 계산 불가 시 0.0
     """
-    a = np.array([point_a.x, point_a.y, point_a.z], dtype=np.float64)
-    v = np.array([vertex.x,  vertex.y,  vertex.z],  dtype=np.float64)
-    c = np.array([point_c.x, point_c.y, point_c.z], dtype=np.float64)
+    z_a = 0.0 if ignore_z else point_a.z
+    z_v = 0.0 if ignore_z else vertex.z
+    z_c = 0.0 if ignore_z else point_c.z
+
+    a = np.array([point_a.x, point_a.y, z_a], dtype=np.float64)
+    v = np.array([vertex.x,  vertex.y,  z_v],  dtype=np.float64)
+    c = np.array([point_c.x, point_c.y, z_c], dtype=np.float64)
 
     va, vc = a - v, c - v
     n_va, n_vc = np.linalg.norm(va), np.linalg.norm(vc)
@@ -178,6 +183,7 @@ def _compute(
     lm_v: LandmarkPoint,
     lm_c: LandmarkPoint,
     threshold: float = VISIBILITY_THRESHOLD,
+    ignore_z: bool = False,
 ) -> JointAngleResult:
     """
     visibility 검증 후 각도 계산. 3점 중 최소값이 threshold 미달 시 reliable=False 반환.
@@ -199,7 +205,7 @@ def _compute(
     if min(lm_a.visibility, lm_v.visibility, lm_c.visibility) < threshold:
         return res
     res.reliable  = True
-    res.angle_deg = calculate_angle_3d(lm_a, lm_v, lm_c)
+    res.angle_deg = calculate_angle_3d(lm_a, lm_v, lm_c, ignore_z=ignore_z)
     return res
 
 
@@ -209,6 +215,7 @@ def _compute(
 def compute_knee_angles(
     landmarks: dict,
     threshold: float = VISIBILITY_THRESHOLD,
+    ignore_z: bool = False,
 ) -> list[JointAngleResult]:
     """무릎 굴곡: Hip — Knee — Ankle (좌우)"""
     return [
@@ -218,6 +225,7 @@ def compute_knee_angles(
             get_lm(landmarks, knee),
             get_lm(landmarks, ankle),
             threshold,
+            ignore_z,
         )
         for side, hip, knee, ankle in [
             ("left",  BPL.LEFT_HIP,  BPL.LEFT_KNEE,  BPL.LEFT_ANKLE),
@@ -229,6 +237,7 @@ def compute_knee_angles(
 def compute_elbow_angles(
     landmarks: dict,
     threshold: float = VISIBILITY_THRESHOLD,
+    ignore_z: bool = False,
 ) -> list[JointAngleResult]:
     """팔꿈치 굴곡: Shoulder — Elbow — Wrist (좌우)"""
     return [
@@ -238,6 +247,7 @@ def compute_elbow_angles(
             get_lm(landmarks, elbow),
             get_lm(landmarks, wrist),
             threshold,
+            ignore_z,
         )
         for side, shoulder, elbow, wrist in [
             ("left",  BPL.LEFT_SHOULDER,  BPL.LEFT_ELBOW,  BPL.LEFT_WRIST),
@@ -249,6 +259,7 @@ def compute_elbow_angles(
 def compute_shoulder_angles(
     landmarks: dict,
     threshold: float = VISIBILITY_THRESHOLD,
+    ignore_z: bool = False,
 ) -> list[JointAngleResult]:
     """어깨 외전/거상: Elbow — Shoulder — Hip (좌우)"""
     return [
@@ -258,6 +269,7 @@ def compute_shoulder_angles(
             get_lm(landmarks, shoulder),
             get_lm(landmarks, hip),
             threshold,
+            ignore_z,
         )
         for side, elbow, shoulder, hip in [
             ("left",  BPL.LEFT_ELBOW,  BPL.LEFT_SHOULDER,  BPL.LEFT_HIP),
@@ -269,6 +281,7 @@ def compute_shoulder_angles(
 def compute_hip_angles(
     landmarks: dict,
     threshold: float = VISIBILITY_THRESHOLD,
+    ignore_z: bool = False,
 ) -> list[JointAngleResult]:
     """고관절 굴곡: Shoulder — Hip — Knee (좌우)"""
     return [
@@ -278,6 +291,7 @@ def compute_hip_angles(
             get_lm(landmarks, hip),
             get_lm(landmarks, knee),
             threshold,
+            ignore_z,
         )
         for side, shoulder, hip, knee in [
             ("left",  BPL.LEFT_SHOULDER,  BPL.LEFT_HIP,  BPL.LEFT_KNEE),
@@ -289,6 +303,7 @@ def compute_hip_angles(
 def compute_ankle_angles(
     landmarks: dict,
     threshold: float = VISIBILITY_THRESHOLD,
+    ignore_z: bool = False,
 ) -> list[JointAngleResult]:
     """발목 배측굴곡: Knee — Ankle — Foot Index (좌우)"""
     return [
@@ -298,6 +313,7 @@ def compute_ankle_angles(
             get_lm(landmarks, ankle),
             get_lm(landmarks, foot_index),
             threshold,
+            ignore_z,
         )
         for side, knee, ankle, foot_index in [
             ("left",  BPL.LEFT_KNEE,  BPL.LEFT_ANKLE,  BPL.LEFT_FOOT_INDEX),
@@ -315,6 +331,7 @@ def analyze_pose(
     timestamp_ms: int = -1,
     threshold:    float = VISIBILITY_THRESHOLD,
     use_world:    bool  = False,
+    ignore_z:     bool  = False,
 ) -> PoseAngleReport:
     """
     단일 포즈 딕셔너리 → PoseAngleReport.
@@ -341,9 +358,9 @@ def analyze_pose(
         frame_index=frame_index,
         timestamp_ms=timestamp_ms,
     )
-    report.joints.extend(compute_knee_angles(lm, threshold))
-    report.joints.extend(compute_elbow_angles(lm, threshold))
-    report.joints.extend(compute_shoulder_angles(lm, threshold))
-    report.joints.extend(compute_hip_angles(lm, threshold))
-    report.joints.extend(compute_ankle_angles(lm, threshold))
+    report.joints.extend(compute_knee_angles(lm, threshold, ignore_z))
+    report.joints.extend(compute_elbow_angles(lm, threshold, ignore_z))
+    report.joints.extend(compute_shoulder_angles(lm, threshold, ignore_z))
+    report.joints.extend(compute_hip_angles(lm, threshold, ignore_z))
+    report.joints.extend(compute_ankle_angles(lm, threshold, ignore_z))
     return report
