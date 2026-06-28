@@ -48,6 +48,7 @@ import copy
 import json
 import sys
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -74,12 +75,14 @@ try:
         analyze_single_frame, create_image_landmarker, draw_landmarks_on_frame,
     )
     from vision_ai.mediapipe_rom_webcam_pipeline.src.core.visualizer import build_angle_canvas
+    from vision_ai.mediapipe_rom_webcam_pipeline.src.core.mobility_score import evaluate_mobility
 except ImportError:
     from core.angle_engine import VISIBILITY_THRESHOLD, PoseAngleReport, analyze_pose  # type: ignore
     from core.landmark_extractor import (  # type: ignore
         analyze_single_frame, create_image_landmarker, draw_landmarks_on_frame,
     )
     from core.visualizer import build_angle_canvas  # type: ignore
+    from core.mobility_score import evaluate_mobility  # type: ignore
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -248,6 +251,20 @@ def select_best_max_frame(
 # ──────────────────────────────────────────────────────────────────────────────
 # ROM 계산
 # ──────────────────────────────────────────────────────────────────────────────
+def map_to_ama_angle(joint_name: str, mp_angle: float) -> float:
+    """
+    MediaPipe의 3D 내부 각도를 AMA 해부학적 각도로 변환합니다.
+    - 팔꿈치(elbow), 무릎(knee): 차렷 시 180도 → AMA 0도. 굽힐수록 각도 감소.
+      따라서 180 - mp_angle
+    - 어깨(shoulder): 차렷 시 0~15도 → AMA 0도. 굽히거나 외전 시 각도 증가.
+      따라서 mp_angle 그대로 사용
+    """
+    name_lower = joint_name.lower()
+    if "elbow" in name_lower or "knee" in name_lower:
+        return max(0.0, 180.0 - mp_angle)
+    return mp_angle
+
+
 def compute_snapshot_rom(
     neutral:      SnapshotFrame,
     max_selected: SnapshotFrame,
@@ -292,10 +309,17 @@ def compute_snapshot_rom(
         m_ang = max_angles.get(joint)
 
         if n_ang is not None and m_ang is not None:
-            rom_val = round(abs(n_ang - m_ang), 2)
+            ama_n = map_to_ama_angle(joint, n_ang)
+            ama_m = map_to_ama_angle(joint, m_ang)
+            
+            # 최종 ROM은 시작점과의 차이가 아닌, 사용자가 뻗어낸 "절대 도달 각도" 자체입니다.
+            rom_val = round(ama_m, 2)
+            
             rom_results[joint] = {
                 "neutral_angle": round(n_ang, 2),
                 "max_angle":     round(m_ang, 2),
+                "ama_neutral_angle": round(ama_n, 2),
+                "ama_max_angle": round(ama_m, 2),
                 "rom":           rom_val,
                 "reliable":      True,
             }
@@ -389,6 +413,7 @@ def run_snapshot_rom_pipeline(
     save_images:  bool  = True,
     joint:        str   = "unknown",
     movement:     str   = "unknown",
+    side:         str   = "both",
 ) -> dict:
     """
     특정 타임스탬프의 스냅샷 3장으로 ROM을 분석합니다.
@@ -494,6 +519,7 @@ def run_snapshot_rom_pipeline(
                 timestamp_ms=int(neutral_ts * 1000),
                 threshold=threshold,
                 use_world=use_world,
+                ignore_z=(movement in ["flexion", "extension"]),
             )
 
         neutral_snap = SnapshotFrame(
@@ -546,6 +572,7 @@ def run_snapshot_rom_pipeline(
                     timestamp_ms=int(ts * 1000),
                     threshold=threshold,
                     use_world=use_world,
+                    ignore_z=(movement in ["flexion", "extension"]),
                 )
 
             snap = SnapshotFrame(
@@ -587,19 +614,20 @@ def run_snapshot_rom_pipeline(
         rom_results = compute_snapshot_rom(neutral_snap, best_max)
         confidence  = _overall_confidence(max_candidates, best_max, rom_results)
 
-        print(f"  {'관절명':24s}  {'중립각':>8s}  {'최대각':>8s}  {'ROM':>8s}")
-        print(f"  {'-'*56}")
+        print(f"  {'관절명':24s}  {'중립(MP)':>8s}  {'최대(MP)':>8s}  {'AMA최대':>8s}  {'ROM':>8s}")
+        print(f"  {'-'*66}")
         for jname, data in rom_results.items():
             if data["reliable"]:
                 print(
                     f"  {jname:24s}  "
                     f"{data['neutral_angle']:7.2f}°  "
                     f"{data['max_angle']:7.2f}°  "
+                    f"{data['ama_max_angle']:7.2f}°  "
                     f"{data['rom']:7.2f}°"
                 )
             else:
                 reason_str = data.get("reason", "unknown")
-                print(f"  {jname:24s}  {'—':>8s}  {'—':>8s}  [UNRELIABLE: {reason_str}]")
+                print(f"  {jname:24s}  {'—':>8s}  {'—':>8s}  {'—':>8s}  [UNRELIABLE: {reason_str}]")
 
         # ── 5. 이미지 저장 ────────────────────────────────────────────
         if save_images:
@@ -634,35 +662,55 @@ def run_snapshot_rom_pipeline(
     # ── 최종 결과 구성 + JSON 저장 ────────────────────────────────────
     elapsed = time.perf_counter() - start_wall
 
-    # 해당 관절의 ROM 수치를 추출·비율 계산
-    rom_ratio_result: dict[str, Any] = {}
-    if normal_deg is not None and normal_deg > 0:
-        for jname, jdata in rom_results.items():
-            if jdata.get("reliable") and jdata.get("rom") is not None:
-                ratio = round(jdata["rom"] / normal_deg * 100, 1)
-                rom_ratio_result[jname] = {
-                    "rom_deg":    round(jdata["rom"], 2),
-                    "normal_deg": normal_deg,
-                    "rom_ratio_pct": ratio,
-                    "grade": (
-                        "정상 범위" if ratio >= 75
-                        else "경도 제한" if ratio >= 50
-                        else "중등도 제한" if ratio >= 25
-                        else "고도 제한"
-                    ),
-                }
-
     # ── 대상 관절 데이터 필터링 ───────────────────────────────────────────────────
-    if joint != "unknown":
-        filtered_rom_results = {k: v for k, v in rom_results.items() if joint in k}
-        filtered_rom_ratio   = {k: v for k, v in rom_ratio_result.items() if joint in k}
-    else:
-        filtered_rom_results = rom_results
-        filtered_rom_ratio   = rom_ratio_result
+    filtered_rom_results = {}
+    for k, v in rom_results.items():
+        if joint != "unknown" and joint not in k:
+            continue
+        if side == "left" and "left" not in k:
+            continue
+        if side == "right" and "right" not in k:
+            continue
+        filtered_rom_results[k] = v
+
+    # ── V2 Mobility Score 연동 ──────────────────────────────────────────────────
+    mobility_analysis: list[dict] = []
+
+    if joint != "unknown" and movement != "unknown":
+        joint_key = f"{joint}_{movement}"
+        ndeg = normal_deg if normal_deg is not None else 150 # Fallback
+        
+        for k, v in filtered_rom_results.items():
+            if not v.get("reliable"):
+                continue
+                
+            cur_side = "left" if "left" in k else ("right" if "right" in k else "unknown")
+            side_rom = v.get("rom")  # 유지: 기존의 순수 ROM 방식을 그대로 사용
+            
+            if side_rom is not None:
+                try:
+                    mobility_evaluation = evaluate_mobility(joint_key, side_rom)
+                    side_grade = mobility_evaluation.get("grade", "NORMAL")
+                    rom_ratio = round((side_rom / ndeg) * 100, 1) if ndeg > 0 else None
+                    
+                    mobility_analysis.append({
+                        "side": cur_side,
+                        "measured_angle_deg": side_rom,
+                        "mobility_score": {
+                            "normal_deg": ndeg,
+                            "rom_ratio": rom_ratio,
+                            "grade": side_grade,
+                            "clinical_meaning": mobility_evaluation.get("clinical_meaning")
+                        }
+                    })
+                except Exception as e:
+                    print(f"[WARN] Mobility Score 계산 중 오류 발생 ({cur_side}): {e}")
 
     final_result = {
+        "session_id":   datetime.now().strftime("%Y%m%d_%H%M%S"),
         "joint":        joint,
         "movement":     movement,
+        "side":         side,
         "video_file":   video_path.name,
         "video_info":   info,
         "measurement": {
@@ -676,11 +724,11 @@ def run_snapshot_rom_pipeline(
             "use_world_landmarks":  use_world,
             "visibility_threshold": threshold,
         },
-        "rom_results":   filtered_rom_results,
-        "rom_ratio":     filtered_rom_ratio,
-        "confidence":    confidence,
-        "elapsed_sec":   round(elapsed, 3),
-        "model":         "pose_landmarker_full.task",
+        "rom_results":        filtered_rom_results,
+        "mobility_analysis":  mobility_analysis,
+        "confidence":         confidence,
+        "elapsed_sec":        round(elapsed, 3),
+        "model":              "pose_landmarker_full.task",
     }
 
     rom_path = output_dir / "rom_result.json"

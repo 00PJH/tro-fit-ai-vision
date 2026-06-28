@@ -140,6 +140,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str, default=str(DEFAULT_VIDEOS_DIR), metavar="DIR",
         help=f"비디오 폴더 경로 (기본값: {DEFAULT_VIDEOS_DIR})",
     )
+    parser.add_argument(
+        "--side",
+        type=str, default="both", choices=["left", "right", "both"],
+        help="분석할 신체 측면 지정 (기본값: both). 측면 동작의 경우 left 또는 right 지정 권장.",
+    )
 
     # ── 모드 선택 ──────────────────────────────────────────────────────
     parser.add_argument(
@@ -234,8 +239,8 @@ def _build_parser() -> argparse.ArgumentParser:
 # ─────────────────────────────────────────────────────────────────────────────
 def _process_raw_videos(videos_dir: Path) -> None:
     """
-    videos/raw/ 폴더를 스캔하여 파일명에 따라 videos/{joint}/{movement}/ 로 자동 이동합니다.
-    형식: {joint}_{movement}_*.mp4
+    videos/raw/ 폴더를 스캔하여 파일명에 따라 videos/{joint}/{movement}/{side}/ 로 자동 이동합니다.
+    형식: {joint}_{movement}_{side}_*.mp4 (예: elbow_flexion_left_1.mp4)
     """
     raw_dir = videos_dir / "raw"
     if not raw_dir.exists():
@@ -251,11 +256,14 @@ def _process_raw_videos(videos_dir: Path) -> None:
         if len(parts) >= 2:
             joint = parts[0].lower()
             movement = parts[1].lower()
+            # side 파싱 (ex: elbow_flexion_left)
+            side = parts[2].lower() if len(parts) >= 3 and parts[2].lower() in ["left", "right", "both"] else "both"
         else:
             joint = "unknown"
             movement = "unknown"
+            side = "both"
             
-        target_dir = videos_dir / joint / movement
+        target_dir = videos_dir / joint / movement / side
         target_dir.mkdir(parents=True, exist_ok=True)
         
         target_path = target_dir / video_path.name
@@ -263,7 +271,7 @@ def _process_raw_videos(videos_dir: Path) -> None:
         # 파일 이동
         try:
             shutil.move(str(video_path), str(target_path))
-            print(f"  → 이동 완료: {video_path.name} => {joint}/{movement}/")
+            print(f"  → 이동 완료: {video_path.name} => {joint}/{movement}/{side}/")
         except Exception as e:
             print(f"  [WARN] 파일 이동 실패 ({video_path.name}): {e}")
 
@@ -309,28 +317,27 @@ def _collect_videos(video_arg: str | None, videos_dir: Path) -> list[Path]:
 # ─────────────────────────────────────────────────────────────────────────────
 # joint / movement 자동 파싱
 # ─────────────────────────────────────────────────────────────────────────────
-def _detect_joint_movement(
+def _detect_joint_movement_side(
     video_path: Path,
     videos_dir: Path,
     joint_arg: str | None,
     movement_arg: str | None,
-) -> tuple[str, str]:
+    side_arg: str,
+) -> tuple[str, str, str]:
     """
-    joint, movement 문자열을 반환합니다.
+    joint, movement, side 문자열을 반환합니다.
     우선순위: CLI 인수 > videos 경로 계층 자동 파싱 > 'unknown'
-    경로 예: videos/shoulder/abduction/xxx.mp4 → ('shoulder', 'abduction')
+    경로 예: videos/shoulder/abduction/left/xxx.mp4 → ('shoulder', 'abduction', 'left')
     """
-    if joint_arg and movement_arg:
-        return joint_arg.lower(), movement_arg.lower()
-
     try:
         rel = video_path.resolve().relative_to(videos_dir.resolve())
-        parts = rel.parts  # ('shoulder', 'abduction', 'xxx.mp4')
-        joint    = parts[0].lower() if len(parts) >= 2 else (joint_arg or "unknown")
-        movement = parts[1].lower() if len(parts) >= 3 else (movement_arg or "unknown")
-        return joint, movement
+        parts = rel.parts  # ('shoulder', 'abduction', 'left', 'xxx.mp4')
+        joint    = joint_arg.lower() if joint_arg else (parts[0].lower() if len(parts) >= 2 else "unknown")
+        movement = movement_arg.lower() if movement_arg else (parts[1].lower() if len(parts) >= 3 else "unknown")
+        side     = side_arg.lower() if side_arg != "both" else (parts[2].lower() if len(parts) >= 4 and parts[2].lower() in ["left", "right", "both"] else "both")
+        return joint, movement, side
     except ValueError:
-        return (joint_arg or "unknown"), (movement_arg or "unknown")
+        return (joint_arg or "unknown"), (movement_arg or "unknown"), side_arg
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -387,13 +394,13 @@ def main() -> None:
     for i, video_path in enumerate(video_list, 1):
         print(f"\n[{i}/{len(video_list)}] {video_path.name}")
 
-        # 관절/동작 감지 및 세션 타임스탬프 기반 output_dir 구성
-        joint, movement = _detect_joint_movement(
-            video_path, videos_dir, args.joint, args.movement
+        # 관절/동작/측면 감지 및 세션 타임스탬프 기반 output_dir 구성
+        joint, movement, parsed_side = _detect_joint_movement_side(
+            video_path, videos_dir, args.joint, args.movement, args.side
         )
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = Path(args.output_dir) / joint / movement / session_id
-        print(f"  관절: {joint}  /  동작: {movement}  /  세션: {session_id}")
+        output_dir = Path(args.output_dir) / joint / movement / parsed_side / session_id
+        print(f"  관절: {joint}  /  동작: {movement}  /  측면: {parsed_side}  /  세션: {session_id}")
 
         try:
             if mode == "snapshot":
@@ -410,6 +417,7 @@ def main() -> None:
                     save_images=not args.no_angle_img,
                     joint=joint,
                     movement=movement,
+                    side=parsed_side,
                 )
             else:
                 # ── Full 모드: 전체 프레임 순차 처리 ─────────────────

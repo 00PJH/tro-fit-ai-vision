@@ -1,0 +1,50 @@
+{
+  "session_id": "20260628_215907",
+  "joint": "elbow",
+  "movement": "flexion",
+  "side": "left",
+  "video_file": "elbow_flexion_left.mp4",
+  "video_info": {
+    "fps": 24.0,
+    "total_frames": 76,
+    "width": 720,
+    "height": 1280,
+    "duration_s": 3.167
+  },
+  "measurement": {
+    "neutral_captured_at": "0.500s (frame #12)",
+    "max_candidates": [
+      "2.167s (frame #52)",
+      "2.667s (frame #64)"
+    ],
+    "max_selected": "2.667s (frame #64)",
+    "selection_reason": "more_extreme_pose",
+    "use_world_landmarks": true,
+    "visibility_threshold": 0.65
+  },
+  "rom_results": {
+    "left_elbow": {
+      "neutral_angle": 177.42,
+      "max_angle": 55.07,
+      "ama_neutral_angle": 2.58,
+      "ama_max_angle": 124.93,
+      "rom": 124.93,
+      "reliable": true
+    }
+  },
+  "mobility_analysis": [
+    {
+      "side": "left",
+      "measured_angle_deg": 124.93,
+      "mobility_score": {
+        "normal_deg": 150,
+        "rom_ratio": 83.3,
+        "grade": "NORMAL",
+        "clinical_meaning": "식사·세수·전화 등 기본 일상생활 동작 모두 가능"
+      }
+    }
+  ],
+  "confidence": "HIGH",
+  "elapsed_sec": 0.725,
+  "model": "pose_landmarker_full.task"
+}
